@@ -6,3 +6,5 @@ ta
 ccxt
 altair
 requests
+plotly
+streamlit-autorefresh
