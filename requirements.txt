@@ -8,3 +8,4 @@ altair
 requests
 plotly
 streamlit-autorefresh
+free-crypto-news
