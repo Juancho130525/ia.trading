@@ -21,10 +21,10 @@ temporalidad = st.sidebar.selectbox(
 
 # --- CONEXIÓN CON BINANCE ---
 @st.cache_resource
-def conectar_binance():
-    return ccxt.binance()
+def conectar_bybit():
+    return ccxt.bybit()
 
-exchange = conectar_binance()
+exchange = conectar_bybit()
 
 def obtener_datos_reales(timeframe):
     velas = exchange.fetch_ohlcv('BTC/USDT', timeframe=timeframe, limit=500)
