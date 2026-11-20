@@ -8,7 +8,7 @@ import altair as alt
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Predictor Crypto IDX", layout="wide")
-st.title("IA para Crypto IDX (Conectado a Binance)")
+st.title("IA para Crypto IDX (Conectado a Kraken)")
 st.write("Esta IA analiza el mercado real de Bitcoin para predecir la dirección de la próxima vela.")
 
 # --- BARRA LATERAL ---
@@ -19,15 +19,16 @@ temporalidad = st.sidebar.selectbox(
     index=2 # Por defecto 15m
 )
 
-# --- CONEXIÓN CON BINANCE ---
+# --- CONEXIÓN CON KRAKEN (PASO 1 Y 2) ---
 @st.cache_resource
-def conectar_bybit():
-    return ccxt.bybit()
+def conectar_kraken():
+    return ccxt.kraken()
 
-exchange = conectar_bybit()
+exchange = conectar_kraken()
 
 def obtener_datos_reales(timeframe):
-    velas = exchange.fetch_ohlcv('BTC/USDT', timeframe=timeframe, limit=500)
+    # PASO 3: Aquí cambiamos BTC/USDT por BTC/USD
+    velas = exchange.fetch_ohlcv('BTC/USD', timeframe=timeframe, limit=500)
     df = pd.DataFrame(velas, columns=['timestamp', 'Open', 'High', 'Low', 'Close', 'Volume'])
     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
     df.set_index('timestamp', inplace=True)
@@ -59,7 +60,6 @@ try:
     ultima_ema9 = ultima_vela['EMA_9'].values[0]
     ultima_ema21 = ultima_vela['EMA_21'].values[0]
     
-    # CORRECCIÓN 1: Pasamos los datos como un DataFrame con nombres de columnas
     datos_prediccion = pd.DataFrame(
         [[ultimo_rsi, ultima_ema9, ultima_ema21, ultimo_close]], 
         columns=['RSI', 'EMA_9', 'EMA_21', 'Close']
@@ -90,9 +90,8 @@ try:
     else:
         st.warning(f"⚪ NO OPERAR - Mercado indeciso (Compra: {prob_compra:.1f}% / Venta: {prob_venta:.1f}%). Espera una mejor oportunidad.")
 
-    # Gráfica mejorada con Zoom
+    # Gráfica
     st.subheader("Gráfica del Mercado Real (Últimas 30 velas)")
-    
     chart_data = df[['Close']].tail(30).reset_index()
     
     chart = alt.Chart(chart_data).mark_line(color="#00FF00").encode(
@@ -100,9 +99,7 @@ try:
         y=alt.Y('Close:Q', scale=alt.Scale(zero=False), title='Precio BTC')
     ).properties(height=350)
     
-    # CORRECCIÓN 2: Reemplazamos use_container_width por width='stretch'
     st.altair_chart(chart, width='stretch')
-    
     st.button("🔄 Actualizar Análisis")
 
 except Exception as e:
