@@ -10,14 +10,21 @@ from datetime import datetime, timezone
 from streamlit_autorefresh import st_autorefresh
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
-st.set_page_config(page_title="Quantum Crypto AI", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Quantum Crypto AI", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
 
 # Ocultar menús de Streamlit para que se vea como una App real
+# Ocultar menús de Streamlit sin dañar la flechita de la barra lateral
 hide_st_style = """
             <style>
             #MainMenu {visibility: hidden;}
             footer {visibility: hidden;}
             header {visibility: hidden;}
+            
+            /* Esto hace que la flechita sea visible y verde neón */
+            [data-testid="collapsedControl"] {
+                display: block;
+                color: #00FF00;
+            }
             </style>
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
