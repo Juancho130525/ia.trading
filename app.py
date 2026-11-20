@@ -12,7 +12,7 @@ from streamlit_autorefresh import st_autorefresh
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Quantum Crypto AI", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
 
-# Ocultar solo el menú de opciones y el footer, dejando visible la barra superior para la flechita
+# Ocultar solo el menú de opciones y el pie de página
 hide_st_style = """
             <style>
             #MainMenu {visibility: hidden;}
@@ -20,12 +20,11 @@ hide_st_style = """
             </style>
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
-st.markdown(hide_st_style, unsafe_allow_html=True)
 
-# Auto-refrescar cada 30 segundos para que el mercado esté en vivo
+# Auto-refrescar cada 30 segundos
 st_autorefresh(interval=30000, key="datarefresh")
 
-# --- TÍTULO PRINCIPAL (Con estilo) ---
+# --- TÍTULO PRINCIPAL ---
 st.markdown("<h1 style='text-align: center; color: #00FF00;'>⚡ QUANTUM CRYPTO AI ⚡</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: gray;'>Análisis algorítmico en tiempo real conectado a Kraken</p>", unsafe_allow_html=True)
 
@@ -34,7 +33,7 @@ if 'ganadas' not in st.session_state: st.session_state.ganadas = 0
 if 'perdidas' not in st.session_state: st.session_state.perdidas = 0
 
 # --- BARRA LATERAL (Controles) ---
-st.sidebar.image("https://cdn-icons-png.flaticon.com/512/2933/2933245.png", width=80) # Icono de gráfico
+st.sidebar.image("https://cdn-icons-png.flaticon.com/512/2933/2933245.png", width=80)
 st.sidebar.header("Configuración del Sistema")
 temporalidad = st.sidebar.selectbox("Temporalidad de Velas", options=['1m', '5m', '15m', '1h'], index=2)
 
@@ -115,7 +114,7 @@ try:
         prob_compra = probabilidades[1] * 100
         prob_venta = probabilidades[0] * 100
 
-        # --- TARJETAS DE DATOS (Métricas) ---
+        # --- TARJETAS DE DATOS ---
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Precio BTC", f"${ultimo_close:,.2f}")
         col2.metric("RSI (14)", f"{ultimo_rsi:.1f}", "Sobreventa" if ultimo_rsi < 30 else ("Sobrecompra" if ultimo_rsi > 70 else "Neutral"))
@@ -163,11 +162,10 @@ try:
         # --- GRÁFICA DE VELAS JAPONESAS (PRO) ---
         st.markdown("### 📈 Gráfico de Velas en Tiempo Real")
         
-        df_plot = df.tail(40) # Últimas 40 velas para que se vea bien
+        df_plot = df.tail(40)
         
         fig = go.Figure()
         
-        # Velas Japonesas
         fig.add_trace(go.Candlestick(
             x=df_plot.index, open=df_plot['Open'], high=df_plot['High'],
             low=df_plot['Low'], close=df_plot['Close'],
@@ -175,11 +173,9 @@ try:
             name='Precio BTC'
         ))
         
-        # Líneas de EMAs
         fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['EMA_9'], line=dict(color='#00BFFF', width=1.5), name='EMA 9'))
         fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['EMA_21'], line=dict(color='#FF00FF', width=1.5), name='EMA 21'))
 
-        # Estilo visual del gráfico
         fig.update_layout(
             template='plotly_dark',
             paper_bgcolor='rgba(0,0,0,0)',
