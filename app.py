@@ -2,13 +2,13 @@ import streamlit as st
 import ccxt
 import pandas as pd
 import numpy as np
+from sklearn.ensemble import RandomForestClassifier
 import ta
 import requests
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timezone
 from streamlit_autorefresh import st_autorefresh
-import xgboost as xgb
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Quantum Crypto AI", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
@@ -42,7 +42,7 @@ hide_st_style = """
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
-# Auto-refrescar
+# Auto-refrescar cada 30 segundos
 st_autorefresh(interval=30000, key="datarefresh")
 
 # --- TÍTULO Y CINTA ---
@@ -106,77 +106,59 @@ def conectar_kraken(): return ccxt.kraken()
 exchange = conectar_kraken()
 
 def obtener_datos_reales(timeframe):
-    velas = exchange.fetch_ohlcv('BTC/USD', timeframe=timeframe, limit=500)
+    # Traemos 1500 velas para que la IA tenga un historial amplio
+    velas = exchange.fetch_ohlcv('BTC/USD', timeframe=timeframe, limit=1500)
     df = pd.DataFrame(velas, columns=['timestamp', 'Open', 'High', 'Low', 'Close', 'Volume'])
     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
     df.set_index('timestamp', inplace=True)
     return df
 
-# --- CEREBRO DE LA IA (XGBOOST + NUEVOS INDICADORES) ---
+# --- CEREBRO DE LA IA (MODELO ROBUSTO Y SIN SESGO) ---
 try:
-    with st.spinner('Conectando al mercado y analizando patrones profundos...'):
+    with st.spinner('Conectando al mercado y analizando patrones...'):
         df = obtener_datos_reales(temporalidad)
         
-        # 1. Indicadores Clásicos
+        # Indicadores
         df['RSI'] = ta.momentum.RSIIndicator(df['Close'], window=14).rsi()
         df['EMA_9'] = ta.trend.EMAIndicator(df['Close'], window=9).ema_indicator()
         df['EMA_21'] = ta.trend.EMAIndicator(df['Close'], window=21).ema_indicator()
         
-        # 2. NUEVOS INDICADORES (El secreto de la efectividad)
-        # MACD
         macd = ta.trend.MACD(df['Close'])
         df['MACD'] = macd.macd()
         df['MACD_Signal'] = macd.macd_signal()
         
-        # Bandas de Bollinger
         bb = ta.volatility.BollingerBands(df['Close'], window=20, window_dev=2)
         df['BB_High'] = bb.bollinger_hband()
         df['BB_Low'] = bb.bollinger_lband()
         
-        # ATR (Volatilidad)
         df['ATR'] = ta.volatility.AverageTrueRange(df['High'], df['Low'], df['Close'], window=14).average_true_range()
-        
-        # Distancias porcentuales
         df['Dist_EMA9'] = (df['Close'] - df['EMA_9']) / df['EMA_9'] * 100
         df['Dist_EMA21'] = (df['Close'] - df['EMA_21']) / df['EMA_21'] * 100
         df['Vol_SMA'] = df['Volume'].rolling(window=10).mean()
         
-        # 3. Target
+        # Target: 1 si sube, 0 si baja
         df['Target'] = np.where(df['Close'].shift(-1) > df['Close'], 1, 0)
         df_ml = df.dropna()
         
-        # 4. Entrenamiento con XGBoost
         columnas_X = ['RSI', 'Dist_EMA9', 'Dist_EMA21', 'MACD', 'MACD_Signal', 'BB_High', 'BB_Low', 'ATR', 'Vol_SMA']
         X = df_ml[columnas_X]
         y = df_ml['Target']
         
-        # Calcular el peso para balancear clases (evitar sesgo a la venta)
-        ratio_balance = (len(y) - y.sum()) / y.sum()
-        
-        # El algoritmo de élite (XGBoost)
-        modelo = xgb.XGBClassifier(
-            n_estimators=150, 
-            max_depth=4, 
-            learning_rate=0.05, 
-            scale_pos_weight=ratio_balance,
-            random_state=42,
-            use_label_encoder=False,
-            eval_metric='logloss'
-        )
+        # Usamos Random Forest con balanceo de clases
+        modelo = RandomForestClassifier(n_estimators=200, max_depth=6, random_state=42, class_weight='balanced')
         modelo.fit(X, y)
         
-        # 5. Predicción
-        ultima_vela = df.iloc[-1:]
+        # Predicción con la PENÚLTIMA vela (la última que ya cerró al 100%)
+        ultima_vela = df.iloc[-2:-1]
         ultimo_rsi = ultima_vela['RSI'].values[0]
         ultimo_close = ultima_vela['Close'].values[0]
         ultima_ema9 = ultima_vela['EMA_9'].values[0]
         ultima_ema21 = ultima_vela['EMA_21'].values[0]
         
-        # Preparamos los datos actuales para XGBoost
         datos_pred = pd.DataFrame([[
             ultima_vela['RSI'].values[0],
-            (ultimo_close - ultima_ema9) / ultima_ema9 * 100,
-            (ultimo_close - ultima_ema21) / ultima_ema21 * 100,
+            ultima_vela['Dist_EMA9'].values[0],
+            ultima_vela['Dist_EMA21'].values[0],
             ultima_vela['MACD'].values[0],
             ultima_vela['MACD_Signal'].values[0],
             ultima_vela['BB_High'].values[0],
@@ -203,18 +185,29 @@ try:
             col4.metric("ATR (Volatilidad)", f"{ultima_vela['ATR'].values[0]:.2f}")
 
             st.divider()
-            st.markdown("### 🧠 Veredicto de la Inteligencia Artificial (XGBoost)")
+            st.markdown("### 🧠 Veredicto de la Inteligencia Artificial")
+            
             UMBRAL = 60.0
+            UMBRAL_DEBIL = 52.0 
             señal_emitida = False
             
+            # Lógica de 5 Niveles de Señal
             if prob_compra >= UMBRAL:
-                st.markdown(f"<div style='background-color: rgba(0, 255, 0, 0.2); padding: 20px; border-radius: 10px; border-left: 5px solid #00FF00;'><h2 style='color: #00FF00; margin:0;'>🟢 COMPRA (CALL) - {prob_compra:.1f}%</h2></div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='background-color: rgba(0, 255, 0, 0.2); padding: 20px; border-radius: 10px; border-left: 5px solid #00FF00;'><h2 style='color: #00FF00; margin:0;'>🟢 COMPRA FUERTE (CALL) - {prob_compra:.1f}%</h2></div>", unsafe_allow_html=True)
                 señal_emitida = True
-                mensaje_alerta = f"🟢 SEÑAL DE COMPRA en {temporalidad} ({prob_compra:.1f}%)"
+                mensaje_alerta = f"🟢 SEÑAL FUERTE DE COMPRA en {temporalidad} ({prob_compra:.1f}%)"
             elif prob_venta >= UMBRAL:
-                st.markdown(f"<div style='background-color: rgba(255, 0, 0, 0.2); padding: 20px; border-radius: 10px; border-left: 5px solid #FF0000;'><h2 style='color: #FF0000; margin:0;'>🔴 VENTA (PUT) - {prob_venta:.1f}%</h2></div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='background-color: rgba(255, 0, 0, 0.2); padding: 20px; border-radius: 10px; border-left: 5px solid #FF0000;'><h2 style='color: #FF0000; margin:0;'>🔴 VENTA FUERTE (PUT) - {prob_venta:.1f}%</h2></div>", unsafe_allow_html=True)
                 señal_emitida = True
-                mensaje_alerta = f"🔴 SEÑAL DE VENTA en {temporalidad} ({prob_venta:.1f}%)"
+                mensaje_alerta = f"🔴 SEÑAL FUERTE DE VENTA en {temporalidad} ({prob_venta:.1f}%)"
+            elif prob_compra >= UMBRAL_DEBIL:
+                st.markdown(f"<div style='background-color: rgba(0, 255, 0, 0.1); padding: 20px; border-radius: 10px; border-left: 5px solid #00FF00;'><h3 style='color: #00FF00; margin:0;'>🟢 COMPRA DÉBIL (CALL) - {prob_compra:.1f}%</h3><p style='margin:0; color: gray;'>Considera esperar una confirmación.</p></div>", unsafe_allow_html=True)
+                señal_emitida = True
+                mensaje_alerta = f"🟢 SEÑAL DÉBIL DE COMPRA en {temporalidad} ({prob_compra:.1f}%)"
+            elif prob_venta >= UMBRAL_DEBIL:
+                st.markdown(f"<div style='background-color: rgba(255, 0, 0, 0.1); padding: 20px; border-radius: 10px; border-left: 5px solid #FF0000;'><h3 style='color: #FF0000; margin:0;'>🔴 VENTA DÉBIL (PUT) - {prob_venta:.1f}%</h3><p style='margin:0; color: gray;'>Considera esperar una confirmación.</p></div>", unsafe_allow_html=True)
+                señal_emitida = True
+                mensaje_alerta = f"🔴 SEÑAL DÉBIL DE VENTA en {temporalidad} ({prob_venta:.1f}%)"
             else:
                 st.markdown(f"<div style='background-color: rgba(255, 255, 0, 0.1); padding: 20px; border-radius: 10px; border-left: 5px solid #FFD700;'><h3 style='color: #FFD700; margin:0;'>⚪ MERCADO INDECISO - NO OPERAR</h3><p style='margin:0; color: gray;'>Probabilidad insuficiente (C: {prob_compra:.1f}% / V: {prob_venta:.1f}%)</p></div>", unsafe_allow_html=True)
 
@@ -304,7 +297,7 @@ try:
             with col_t3: st.metric("Tendencia Largo Plazo", "ALCISTA 🟢" if ultima_ema9 > ultima_ema21 else "BAJISTA 🔴")
             st.divider()
             st.markdown("### ⚠️ Aviso Legal")
-            st.info("Este sistema usa Machine Learning (XGBoost) y no garantiza ganancias. El trading implica alto riesgo.")
+            st.info("Este sistema usa Machine Learning y no garantiza ganancias. El trading implica alto riesgo.")
 
 except Exception as e:
     st.error(f"Error de conexión: {e}")
